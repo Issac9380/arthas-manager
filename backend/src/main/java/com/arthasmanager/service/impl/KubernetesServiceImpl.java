@@ -4,13 +4,13 @@ import com.arthasmanager.model.dto.ContainerInfo;
 import com.arthasmanager.model.dto.JavaProcessInfo;
 import com.arthasmanager.model.dto.NamespaceInfo;
 import com.arthasmanager.model.dto.PodInfo;
+import com.arthasmanager.service.ClusterService;
 import com.arthasmanager.service.KubernetesService;
-import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -22,19 +22,14 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class KubernetesServiceImpl implements KubernetesService {
 
-    @Autowired(required = false)
-    private KubernetesClient kubernetesClient;
-
-    private void requireClient() {
-        if (kubernetesClient == null) throw new IllegalStateException("Kubernetes client not available. Please configure kubeconfig.");
-    }
+    private final ClusterService clusterService;
 
     @Override
-    public List<NamespaceInfo> listNamespaces() {
-        requireClient();
-        return kubernetesClient.namespaces().list().getItems().stream()
+    public List<NamespaceInfo> listNamespaces(String clusterId) {
+        return client(clusterId).namespaces().list().getItems().stream()
                 .map(ns -> NamespaceInfo.builder()
                         .name(ns.getMetadata().getName())
                         .status(ns.getStatus() != null ? ns.getStatus().getPhase() : "Unknown")
@@ -43,17 +38,15 @@ public class KubernetesServiceImpl implements KubernetesService {
     }
 
     @Override
-    public List<PodInfo> listPods(String namespace) {
-        requireClient();
-        return kubernetesClient.pods().inNamespace(namespace).list().getItems().stream()
+    public List<PodInfo> listPods(String clusterId, String namespace) {
+        return client(clusterId).pods().inNamespace(namespace).list().getItems().stream()
                 .map(this::toPodInfo)
                 .collect(Collectors.toList());
     }
 
     @Override
-    public List<JavaProcessInfo> listJavaProcesses(String namespace, String podName, String containerName) {
-        requireClient();
-        String output = execCommand(namespace, podName, containerName, "jps", "-l");
+    public List<JavaProcessInfo> listJavaProcesses(String clusterId, String namespace, String podName, String containerName) {
+        String output = execCommand(clusterId, namespace, podName, containerName, "jps", "-l");
         List<JavaProcessInfo> processes = new ArrayList<>();
         for (String line : output.split("\n")) {
             line = line.trim();
@@ -63,12 +56,8 @@ public class KubernetesServiceImpl implements KubernetesService {
             try {
                 int pid = Integer.parseInt(parts[0]);
                 String mainClass = parts.length > 1 ? parts[1] : "Unknown";
-                // Skip Arthas itself and the JPS process
                 if (mainClass.contains("arthas") || mainClass.equals("sun.tools.jps.Jps")) continue;
-                processes.add(JavaProcessInfo.builder()
-                        .pid(pid)
-                        .mainClass(mainClass)
-                        .build());
+                processes.add(JavaProcessInfo.builder().pid(pid).mainClass(mainClass).build());
             } catch (NumberFormatException e) {
                 log.debug("Skipping jps line: {}", line);
             }
@@ -77,31 +66,26 @@ public class KubernetesServiceImpl implements KubernetesService {
     }
 
     @Override
-    public String execCommand(String namespace, String podName, String containerName, String... command) {
+    public String execCommand(String clusterId, String namespace, String podName, String containerName, String... command) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         CountDownLatch latch = new CountDownLatch(1);
 
-        try (ExecWatch watch = kubernetesClient.pods()
+        try (ExecWatch watch = client(clusterId).pods()
                 .inNamespace(namespace)
                 .withName(podName)
                 .inContainer(containerName)
                 .writingOutput(out)
                 .writingError(err)
                 .usingListener(new io.fabric8.kubernetes.client.dsl.ExecListener() {
-                    @Override
-                    public void onClose(int code, String reason) {
-                        latch.countDown();
-                    }
-                    @Override
-                    public void onFailure(Throwable t, Response failureResponse) {
+                    @Override public void onClose(int code, String reason) { latch.countDown(); }
+                    @Override public void onFailure(Throwable t, Response failureResponse) {
                         log.warn("Exec failed: {}", t.getMessage());
                         latch.countDown();
                     }
                 })
                 .exec(command)) {
-            boolean finished = latch.await(30, TimeUnit.SECONDS);
-            if (!finished) {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
                 log.warn("Exec timed out for pod {}/{}", namespace, podName);
             }
         } catch (Exception e) {
@@ -109,21 +93,22 @@ public class KubernetesServiceImpl implements KubernetesService {
             return "";
         }
 
-        String stdout = out.toString();
         String stderr = err.toString();
-        if (!stderr.isBlank()) {
-            log.debug("Exec stderr: {}", stderr);
-        }
-        return stdout;
+        if (!stderr.isBlank()) log.debug("Exec stderr: {}", stderr);
+        return out.toString();
     }
 
     @Override
-    public boolean hasJava(String namespace, String podName, String containerName) {
-        String output = execCommand(namespace, podName, containerName, "which", "java");
+    public boolean hasJava(String clusterId, String namespace, String podName, String containerName) {
+        String output = execCommand(clusterId, namespace, podName, containerName, "which", "java");
         return output != null && !output.trim().isEmpty();
     }
 
-    // ── Mappers ───────────────────────────────────────────────────────────────
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private KubernetesClient client(String clusterId) {
+        return clusterService.getClient(clusterId);
+    }
 
     private PodInfo toPodInfo(Pod pod) {
         List<ContainerInfo> containers = pod.getSpec().getContainers().stream()

@@ -24,6 +24,9 @@ public class ArthasSession {
     /** Unique session identifier returned to the frontend. */
     private String sessionId;
 
+    /** Cluster this session is connected to */
+    private String clusterId;
+
     private String namespace;
     private String podName;
     private String containerName;
