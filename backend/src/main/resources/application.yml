@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: arthas-manager
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+
+arthas:
+  # Local directory to cache downloaded JDK / Arthas packages
+  tools-dir: ${user.home}/.arthas-manager/tools
+  # Arthas boot jar download URL template (use {version})
+  boot-jar-url: https://arthas.aliyun.com/arthas-boot.jar
+  # Default Arthas HTTP API port inside the container
+  default-api-port: 39394
+  # Session idle timeout in minutes
+  session-timeout: 30
+
+kubernetes:
+  # Path to kubeconfig; leave blank to use in-cluster config
+  kubeconfig: ${user.home}/.kube/config
+
+logging:
+  level:
+    com.arthasmanager: DEBUG
+    io.fabric8: WARN

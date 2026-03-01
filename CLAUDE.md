@@ -2,22 +2,37 @@
 
 ## Project Overview
 
-**arthas-manager** is a management layer / controller application built around [Arthas](https://arthas.aliyun.com/), Alibaba's open-source Java diagnostic tool. The project is currently in its inception phase — the repository has been initialized but no source code or tooling has been added yet.
+**arthas-manager** is a Kubernetes-based Java diagnostic platform. It deploys [Arthas](https://arthas.aliyun.com/) into containers, manages JDK uploads, and provides a visual GUI so operators can diagnose JVM issues without typing raw commands.
 
 > This file is updated automatically as the project evolves. If you are an AI assistant, read this file carefully before making any changes.
 
 ---
 
-## Repository State (as of 2026-02-28)
+## Repository State (as of 2026-03-01)
 
 | Aspect | Status |
 |---|---|
-| Source code | Not yet added |
-| Package manager | Not configured |
-| Build tooling | Not configured |
-| Tests | Not configured |
+| Source code | ✅ Initial implementation added |
+| Backend | Spring Boot 3.2 / Java 17 / Maven (`backend/`) |
+| Frontend | Vue 3 + Element Plus + Vite (`frontend/`) |
+| Package manager | Maven (backend), npm (frontend) |
+| Build tooling | `mvn package` / `npm run build` |
+| Tests | Not yet configured |
 | CI/CD | Not configured |
 | Deployment | Not configured |
+
+## Build & Run Commands
+
+```bash
+# Backend
+cd backend && mvn spring-boot:run        # dev server on :8080
+cd backend && mvn package                # produces target/*.jar
+
+# Frontend
+cd frontend && npm install
+cd frontend && npm run dev               # dev server on :3000 (proxies /api → :8080)
+cd frontend && npm run build             # outputs dist/
+```
 
 ---
 
@@ -112,12 +127,25 @@ These conventions should be followed once code is added:
 
 ---
 
-## Key Files
+## Key Files & Modules
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| `README.md` | Project overview (minimal, to be expanded) |
+| `README.md` | Project overview and quick-start guide |
 | `CLAUDE.md` | This file — AI assistant guide |
+| `backend/pom.xml` | Maven dependencies (Spring Boot, Fabric8, HttpClient5, Lombok) |
+| `backend/src/main/resources/application.yml` | App configuration |
+| `backend/.../arthas/command/ArthasCommand.java` | Strategy/Command interface |
+| `backend/.../arthas/command/impl/` | Concrete commands: Dashboard, JVM, Thread, Watch, Trace, Monitor, Stack, HeapDump, JAD, SC, SM, OGNL, Classloader |
+| `backend/.../arthas/factory/ArthasCommandFactory.java` | Factory — auto-discovers all command beans |
+| `backend/.../arthas/session/ArthasSessionManager.java` | In-memory session registry with idle eviction |
+| `backend/.../arthas/executor/ArthasCommandExecutor.java` | HTTP client for Arthas API |
+| `backend/.../service/ArthasServiceImpl.java` | Facade: deploy → attach → execute → close |
+| `backend/.../service/impl/KubernetesServiceImpl.java` | Fabric8 K8s operations |
+| `backend/.../service/impl/FileTransferServiceImpl.java` | JDK/Arthas upload + port-forward |
+| `frontend/src/views/DiagnosisView.vue` | Main diagnosis UI: command forms + result viewer |
+| `frontend/src/views/ClusterView.vue` | K8s namespace/pod/container browser |
+| `frontend/src/stores/arthas.js` | Pinia store for session + command state |
 
 ---
 
