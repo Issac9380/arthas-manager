@@ -9,8 +9,8 @@ import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -22,13 +22,18 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class KubernetesServiceImpl implements KubernetesService {
 
-    private final KubernetesClient kubernetesClient;
+    @Autowired(required = false)
+    private KubernetesClient kubernetesClient;
+
+    private void requireClient() {
+        if (kubernetesClient == null) throw new IllegalStateException("Kubernetes client not available. Please configure kubeconfig.");
+    }
 
     @Override
     public List<NamespaceInfo> listNamespaces() {
+        requireClient();
         return kubernetesClient.namespaces().list().getItems().stream()
                 .map(ns -> NamespaceInfo.builder()
                         .name(ns.getMetadata().getName())
@@ -39,6 +44,7 @@ public class KubernetesServiceImpl implements KubernetesService {
 
     @Override
     public List<PodInfo> listPods(String namespace) {
+        requireClient();
         return kubernetesClient.pods().inNamespace(namespace).list().getItems().stream()
                 .map(this::toPodInfo)
                 .collect(Collectors.toList());
@@ -46,6 +52,7 @@ public class KubernetesServiceImpl implements KubernetesService {
 
     @Override
     public List<JavaProcessInfo> listJavaProcesses(String namespace, String podName, String containerName) {
+        requireClient();
         String output = execCommand(namespace, podName, containerName, "jps", "-l");
         List<JavaProcessInfo> processes = new ArrayList<>();
         for (String line : output.split("\n")) {
