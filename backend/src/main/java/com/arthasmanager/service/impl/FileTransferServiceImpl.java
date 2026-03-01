@@ -4,8 +4,8 @@ import com.arthasmanager.service.FileTransferService;
 import com.arthasmanager.service.KubernetesService;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.LocalPortForward;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -30,7 +30,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class FileTransferServiceImpl implements FileTransferService {
 
     @Value("${arthas.tools-dir}")
@@ -42,8 +41,11 @@ public class FileTransferServiceImpl implements FileTransferService {
     @Value("${arthas.default-api-port:39394}")
     private int arthasApiPort;
 
-    private final KubernetesClient kubernetesClient;
-    private final KubernetesService kubernetesService;
+    @Autowired(required = false)
+    private KubernetesClient kubernetesClient;
+
+    @Autowired
+    private KubernetesService kubernetesService;
 
     /** sessionId → LocalPortForward — kept so callers can close them later via ArthasSession. */
     private final ConcurrentHashMap<String, LocalPortForward> portForwards = new ConcurrentHashMap<>();
