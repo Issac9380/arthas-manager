@@ -1,0 +1,31 @@
+# Maven build output
+target/
+*.jar
+*.war
+*.ear
+
+# Node / frontend build output
+node_modules/
+dist/
+.vite/
+
+# IDE
+.idea/
+*.iml
+.eclipse/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spring Boot dev tools restart
+.restartsidebar
+
+# Environment
+.env
+.env.local
