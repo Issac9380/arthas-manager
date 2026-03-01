@@ -1,43 +1,13 @@
 package com.arthasmanager.config;
 
-import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientBuilder;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.File;
-
-@Slf4j
+/**
+ * Kubernetes 配置占位类.
+ * KubernetesClient 实例由 {@link com.arthasmanager.service.impl.ClusterServiceImpl} 统一管理，
+ * 支持多集群、多认证方式（Kubeconfig / Token / Cert / In-Cluster）。
+ */
 @Configuration
 public class KubernetesConfig {
-
-    @Value("${kubernetes.kubeconfig:}")
-    private String kubeconfigPath;
-
-    /**
-     * Builds a Fabric8 KubernetesClient.
-     * Falls back to in-cluster config when running inside a Pod.
-     * Returns null if no Kubernetes environment is available (dev mode).
-     */
-    @Bean
-    public KubernetesClient kubernetesClient() {
-        try {
-            Config config;
-            if (kubeconfigPath != null && !kubeconfigPath.isBlank() && new File(kubeconfigPath).exists()) {
-                config = Config.fromKubeconfig(kubeconfigPath);
-            } else {
-                config = new ConfigBuilder().build();
-            }
-            KubernetesClient client = new KubernetesClientBuilder().withConfig(config).build();
-            log.info("Kubernetes client initialized: {}", config.getMasterUrl());
-            return client;
-        } catch (Exception e) {
-            log.warn("Kubernetes client initialization failed (no cluster available): {}. K8s features disabled.", e.getMessage());
-            return null;
-        }
-    }
+    // KubernetesClient bean is managed by ClusterServiceImpl
 }

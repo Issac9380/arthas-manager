@@ -4,6 +4,8 @@ import lombok.Data;
 
 @Data
 public class AttachRequest {
+    /** Cluster id; null or empty means the default cluster */
+    private String clusterId;
     private String namespace;
     private String podName;
     private String containerName;

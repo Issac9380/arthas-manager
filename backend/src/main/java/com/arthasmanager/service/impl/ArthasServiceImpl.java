@@ -43,11 +43,13 @@ public class ArthasServiceImpl implements ArthasService {
             log.info("Uploading JDK {} to {}/{}/{}", request.getJdkVersion(),
                     request.getNamespace(), request.getPodName(), request.getContainerName());
             fileTransferService.uploadJdk(
+                    request.getClusterId(),
                     request.getNamespace(), request.getPodName(),
                     request.getContainerName(), request.getJdkVersion());
         }
         log.info("Deploying Arthas to {}/{}/{}", request.getNamespace(), request.getPodName(), request.getContainerName());
         fileTransferService.deployArthas(
+                request.getClusterId(),
                 request.getNamespace(), request.getPodName(), request.getContainerName());
     }
 
@@ -56,11 +58,13 @@ public class ArthasServiceImpl implements ArthasService {
         String sessionId = UUID.randomUUID().toString();
 
         int localPort = fileTransferService.startArthasAndPortForward(
+                request.getClusterId(),
                 request.getNamespace(), request.getPodName(),
                 request.getContainerName(), request.getPid(), sessionId);
 
         ArthasSession session = ArthasSession.builder()
                 .sessionId(sessionId)
+                .clusterId(request.getClusterId())
                 .namespace(request.getNamespace())
                 .podName(request.getPodName())
                 .containerName(request.getContainerName())
@@ -70,12 +74,12 @@ public class ArthasServiceImpl implements ArthasService {
                 .lastUsedAt(Instant.now())
                 .build();
 
-        // Initialise the Arthas HTTP session and store the internal ID
         String internalSessionId = commandExecutor.initSession(session);
         session.setArthasInternalSessionId(internalSessionId);
 
         sessionManager.put(session);
-        log.info("Arthas attached: sessionId={}, pod={}, pid={}", sessionId, request.getPodName(), request.getPid());
+        log.info("Arthas attached: sessionId={}, cluster={}, pod={}, pid={}",
+                sessionId, request.getClusterId(), request.getPodName(), request.getPid());
         return sessionId;
     }
 

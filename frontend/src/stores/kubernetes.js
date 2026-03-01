@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { k8sApi } from '@/api/kubernetes.js'
+import { useClusterStore } from '@/stores/cluster.js'
 
 export const useKubernetesStore = defineStore('kubernetes', () => {
   const namespaces = ref([])
@@ -11,10 +12,14 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
   const selectedContainer = ref('')
   const loading = ref(false)
 
+  function clusterId() {
+    return useClusterStore().activeClusterId
+  }
+
   async function fetchNamespaces() {
     loading.value = true
     try {
-      const res = await k8sApi.listNamespaces()
+      const res = await k8sApi.listNamespaces(clusterId())
       namespaces.value = res.data
     } finally {
       loading.value = false
@@ -27,7 +32,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     pods.value = []
     javaProcesses.value = []
     try {
-      const res = await k8sApi.listPods(namespace)
+      const res = await k8sApi.listPods(clusterId(), namespace)
       pods.value = res.data
     } finally {
       loading.value = false
@@ -38,7 +43,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     loading.value = true
     selectedContainer.value = container
     try {
-      const res = await k8sApi.listJavaProcesses(namespace, pod, container)
+      const res = await k8sApi.listJavaProcesses(clusterId(), namespace, pod, container)
       javaProcesses.value = res.data
     } finally {
       loading.value = false

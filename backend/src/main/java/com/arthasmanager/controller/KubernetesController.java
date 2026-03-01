@@ -18,28 +18,33 @@ public class KubernetesController {
     private final KubernetesService kubernetesService;
 
     @GetMapping("/namespaces")
-    public Result<List<NamespaceInfo>> listNamespaces() {
-        return Result.success(kubernetesService.listNamespaces());
+    public Result<List<NamespaceInfo>> listNamespaces(
+            @RequestParam(required = false) String clusterId) {
+        return Result.success(kubernetesService.listNamespaces(clusterId));
     }
 
     @GetMapping("/namespaces/{namespace}/pods")
-    public Result<List<PodInfo>> listPods(@PathVariable String namespace) {
-        return Result.success(kubernetesService.listPods(namespace));
+    public Result<List<PodInfo>> listPods(
+            @PathVariable String namespace,
+            @RequestParam(required = false) String clusterId) {
+        return Result.success(kubernetesService.listPods(clusterId, namespace));
     }
 
     @GetMapping("/namespaces/{namespace}/pods/{pod}/containers/{container}/processes")
     public Result<List<JavaProcessInfo>> listJavaProcesses(
             @PathVariable String namespace,
             @PathVariable String pod,
-            @PathVariable String container) {
-        return Result.success(kubernetesService.listJavaProcesses(namespace, pod, container));
+            @PathVariable String container,
+            @RequestParam(required = false) String clusterId) {
+        return Result.success(kubernetesService.listJavaProcesses(clusterId, namespace, pod, container));
     }
 
     @GetMapping("/namespaces/{namespace}/pods/{pod}/containers/{container}/java")
     public Result<Boolean> hasJava(
             @PathVariable String namespace,
             @PathVariable String pod,
-            @PathVariable String container) {
-        return Result.success(kubernetesService.hasJava(namespace, pod, container));
+            @PathVariable String container,
+            @RequestParam(required = false) String clusterId) {
+        return Result.success(kubernetesService.hasJava(clusterId, namespace, pod, container));
     }
 }

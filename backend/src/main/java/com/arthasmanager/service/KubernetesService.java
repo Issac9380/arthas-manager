@@ -8,26 +8,18 @@ import java.util.List;
 
 /**
  * Facade over the Fabric8 Kubernetes client.
- * Provides coarse-grained operations needed by the management UI.
+ * All methods accept a {@code clusterId} to support multi-cluster operations.
+ * Pass {@code null} or empty string to use the default cluster.
  */
 public interface KubernetesService {
 
-    List<NamespaceInfo> listNamespaces();
+    List<NamespaceInfo> listNamespaces(String clusterId);
 
-    List<PodInfo> listPods(String namespace);
+    List<PodInfo> listPods(String clusterId, String namespace);
 
-    /**
-     * Executes {@code jps -l} inside the container and returns the running Java processes.
-     */
-    List<JavaProcessInfo> listJavaProcesses(String namespace, String podName, String containerName);
+    List<JavaProcessInfo> listJavaProcesses(String clusterId, String namespace, String podName, String containerName);
 
-    /**
-     * Executes an arbitrary shell command inside a container and returns stdout.
-     */
-    String execCommand(String namespace, String podName, String containerName, String... command);
+    String execCommand(String clusterId, String namespace, String podName, String containerName, String... command);
 
-    /**
-     * Checks whether {@code java} is available inside the container.
-     */
-    boolean hasJava(String namespace, String podName, String containerName);
+    boolean hasJava(String clusterId, String namespace, String podName, String containerName);
 }
