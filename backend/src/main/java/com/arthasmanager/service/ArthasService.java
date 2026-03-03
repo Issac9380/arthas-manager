@@ -41,4 +41,10 @@ public interface ArthasService {
      * Returns metadata for all available commands (used to build the UI dynamically).
      */
     List<Map<String, Object>> listCommandMeta();
+
+    /**
+     * Returns the JDK ↔ Arthas version compatibility matrix.
+     * Shape: {@code { "17": { "recommended": "3.7.2", "supported": ["3.7.2", "3.6.9"] }, … }}
+     */
+    Map<String, Object> getVersionMatrix();
 }

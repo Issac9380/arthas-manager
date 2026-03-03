@@ -13,4 +13,9 @@ public class DeployRequest {
     private boolean uploadJdk;
     /** JDK version to upload, e.g. "17" — only used when uploadJdk=true */
     private String jdkVersion;
+    /**
+     * Arthas version to deploy, e.g. "3.7.2".
+     * Null or blank → use the server-configured default (arthas.default-arthas-version).
+     */
+    private String arthasVersion;
 }

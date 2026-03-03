@@ -5,6 +5,7 @@ import com.arthasmanager.arthas.executor.ArthasCommandExecutor;
 import com.arthasmanager.arthas.factory.ArthasCommandFactory;
 import com.arthasmanager.arthas.session.ArthasSession;
 import com.arthasmanager.arthas.session.ArthasSessionManager;
+import com.arthasmanager.arthas.version.ArthasVersionRegistry;
 import com.arthasmanager.model.dto.ArthasCommandRequest;
 import com.arthasmanager.model.dto.AttachRequest;
 import com.arthasmanager.model.dto.DeployRequest;
@@ -13,6 +14,7 @@ import com.arthasmanager.service.FileTransferService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -32,10 +34,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ArthasServiceImpl implements ArthasService {
 
+    @Value("${arthas.default-arthas-version:3.7.2}")
+    private String defaultArthasVersion;
+
     private final FileTransferService fileTransferService;
     private final ArthasCommandFactory commandFactory;
     private final ArthasCommandExecutor commandExecutor;
     private final ArthasSessionManager sessionManager;
+    private final ArthasVersionRegistry versionRegistry;
 
     @Override
     public void deploy(DeployRequest request) {
@@ -47,10 +53,13 @@ public class ArthasServiceImpl implements ArthasService {
                     request.getNamespace(), request.getPodName(),
                     request.getContainerName(), request.getJdkVersion());
         }
-        log.info("Deploying Arthas to {}/{}/{}", request.getNamespace(), request.getPodName(), request.getContainerName());
+        String arthasVersion = resolveArthasVersion(request.getArthasVersion());
+        log.info("Deploying Arthas {} to {}/{}/{}", arthasVersion,
+                request.getNamespace(), request.getPodName(), request.getContainerName());
         fileTransferService.deployArthas(
                 request.getClusterId(),
-                request.getNamespace(), request.getPodName(), request.getContainerName());
+                request.getNamespace(), request.getPodName(),
+                request.getContainerName(), arthasVersion);
     }
 
     @Override
@@ -108,5 +117,16 @@ public class ArthasServiceImpl implements ArthasService {
     @Override
     public List<Map<String, Object>> listCommandMeta() {
         return commandFactory.listCommandMeta();
+    }
+
+    @Override
+    public Map<String, Object> getVersionMatrix() {
+        return versionRegistry.getVersionMatrix();
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private String resolveArthasVersion(String requested) {
+        return (requested == null || requested.isBlank()) ? defaultArthasVersion : requested;
     }
 }
