@@ -11,10 +11,31 @@ export const useArthasStore = defineStore('arthas', () => {
   const loading = ref(false)
   const deploying = ref(false)
   const attaching = ref(false)
+  // { "8": { recommended: "3.7.2", supported: [...] }, "11": ..., "17": ..., "21": ... }
+  const versionMatrix = ref({})
 
   async function loadCommandMeta() {
     const res = await arthasApi.listCommands()
     commandMeta.value = res.data
+  }
+
+  async function loadVersionMatrix() {
+    try {
+      const res = await arthasApi.getVersionMatrix()
+      versionMatrix.value = res.data
+    } catch (e) {
+      console.warn('Failed to load version matrix', e)
+    }
+  }
+
+  /** Returns the recommended Arthas version for a given JDK major version string. */
+  function getRecommendedArthasVersion(jdkVersion) {
+    return versionMatrix.value[jdkVersion]?.recommended ?? '3.7.2'
+  }
+
+  /** Returns supported Arthas versions for a given JDK major version string. */
+  function getSupportedArthasVersions(jdkVersion) {
+    return versionMatrix.value[jdkVersion]?.supported ?? ['3.7.2']
   }
 
   async function deploy(request) {
@@ -76,6 +97,9 @@ export const useArthasStore = defineStore('arthas', () => {
 
   return {
     sessionId, commandMeta, selectedCommand, results, loading, deploying, attaching,
-    loadCommandMeta, deploy, attach, execute, closeSession, selectCommand, clearResults
+    versionMatrix,
+    loadCommandMeta, loadVersionMatrix,
+    getRecommendedArthasVersion, getSupportedArthasVersions,
+    deploy, attach, execute, closeSession, selectCommand, clearResults
   }
 })

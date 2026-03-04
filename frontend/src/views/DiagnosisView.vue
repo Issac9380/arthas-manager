@@ -169,18 +169,53 @@
     </el-row>
 
     <!-- Deploy Dialog -->
-    <el-dialog v-model="showDeployDialog" title="部署 Arthas 到容器" width="480px">
-      <el-form :model="deployForm" label-width="120px">
+    <el-dialog v-model="showDeployDialog" title="部署 Arthas 到容器" width="520px">
+      <el-form :model="deployForm" label-width="130px">
+
+        <!-- JDK section -->
         <el-form-item label="上传 JDK">
           <el-switch v-model="deployForm.uploadJdk" />
+          <el-text type="info" size="small" style="margin-left: 8px">
+            容器内无 Java 时开启
+          </el-text>
         </el-form-item>
         <el-form-item v-if="deployForm.uploadJdk" label="JDK 版本">
-          <el-select v-model="deployForm.jdkVersion">
+          <el-select v-model="deployForm.jdkVersion" @change="onJdkVersionChange" style="width: 200px">
+            <el-option label="Java 21" value="21" />
             <el-option label="Java 17" value="17" />
             <el-option label="Java 11" value="11" />
             <el-option label="Java 8"  value="8"  />
           </el-select>
+          <el-text type="warning" size="small" style="margin-left: 8px">
+            需提前放置 jdk-{{ deployForm.jdkVersion }}.tar.gz
+          </el-text>
         </el-form-item>
+
+        <el-divider />
+
+        <!-- Arthas version section -->
+        <el-form-item label="Arthas 版本">
+          <el-select v-model="deployForm.arthasVersion" style="width: 200px">
+            <el-option
+              v-for="v in arthasVersionOptions"
+              :key="v"
+              :value="v"
+              :label="v + (v === recommendedArthasVersion ? '（推荐）' : '')"
+            />
+          </el-select>
+        </el-form-item>
+
+        <!-- Compatibility hint -->
+        <el-form-item label=" ">
+          <el-alert
+            :title="compatibilityHint"
+            type="info"
+            :closable="false"
+            show-icon
+            style="padding: 6px 12px"
+          />
+        </el-form-item>
+
       </el-form>
       <template #footer>
         <el-button @click="showDeployDialog = false">取消</el-button>
@@ -209,19 +244,34 @@ const target = reactive({
 const selectedCommandType = ref('')
 const commandParams = ref({})
 const showDeployDialog = ref(false)
-const deployForm = reactive({ uploadJdk: false, jdkVersion: '17' })
+const deployForm = reactive({
+  uploadJdk: false,
+  jdkVersion: '17',
+  arthasVersion: '3.7.2'
+})
 
 onMounted(async () => {
-  await store.loadCommandMeta()
+  // Load command metadata and version matrix in parallel
+  await Promise.all([store.loadCommandMeta(), store.loadVersionMatrix()])
+
   if (store.commandMeta.length > 0) {
     store.selectCommand(store.commandMeta[0].type)
     selectedCommandType.value = store.commandMeta[0].type
     initParams()
   }
+  // Set initial recommended Arthas version based on default JDK selection
+  deployForm.arthasVersion = store.getRecommendedArthasVersion(deployForm.jdkVersion)
 })
 
 // Re-initialise form params when command changes
 watch(() => store.selectedCommand, () => initParams())
+
+// When the deploy dialog is opened, re-sync recommended version
+watch(showDeployDialog, (open) => {
+  if (open) {
+    deployForm.arthasVersion = store.getRecommendedArthasVersion(deployForm.jdkVersion)
+  }
+})
 
 function initParams() {
   if (!store.selectedCommand) return
@@ -243,9 +293,36 @@ function onCommandSelect(type) {
   store.selectCommand(type)
 }
 
+/** When JDK version changes, auto-switch Arthas version to the recommended one. */
+function onJdkVersionChange(jdkVer) {
+  deployForm.arthasVersion = store.getRecommendedArthasVersion(jdkVer)
+}
+
+/** Arthas versions available for the current JDK selection. */
+const arthasVersionOptions = computed(() => {
+  if (!deployForm.uploadJdk) {
+    // No JDK filter when using container's own java — show all known versions
+    const all = new Set()
+    Object.values(store.versionMatrix).forEach(entry => entry.supported?.forEach(v => all.add(v)))
+    return all.size ? [...all].sort().reverse() : ['3.7.2', '3.6.9', '3.5.6']
+  }
+  return store.getSupportedArthasVersions(deployForm.jdkVersion)
+})
+
+/** The recommended version for the current JDK selection. */
+const recommendedArthasVersion = computed(() =>
+  store.getRecommendedArthasVersion(deployForm.jdkVersion)
+)
+
+const compatibilityHint = computed(() => {
+  if (!deployForm.uploadJdk) {
+    return `将部署 Arthas ${deployForm.arthasVersion}，使用容器内已有的 Java`
+  }
+  return `JDK ${deployForm.jdkVersion} 推荐搭配 Arthas ${recommendedArthasVersion.value}`
+})
+
 const previewCommand = computed(() => {
   if (!store.selectedCommand) return ''
-  // Best-effort local preview using the display name
   return `${store.selectedCommand.type} (参数已填写)`
 })
 
@@ -255,7 +332,8 @@ async function doDeploy() {
     podName: target.pod,
     containerName: target.container,
     uploadJdk: deployForm.uploadJdk,
-    jdkVersion: deployForm.jdkVersion
+    jdkVersion: deployForm.jdkVersion,
+    arthasVersion: deployForm.arthasVersion
   })
   showDeployDialog.value = false
 }

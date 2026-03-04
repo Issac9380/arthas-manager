@@ -25,6 +25,15 @@ public class ArthasController {
         return Result.success(arthasService.listCommandMeta());
     }
 
+    /**
+     * Returns the JDK ↔ Arthas version compatibility matrix.
+     * Used by the frontend to populate version selectors and auto-select defaults.
+     */
+    @GetMapping("/version-matrix")
+    public Result<Map<String, Object>> getVersionMatrix() {
+        return Result.success(arthasService.getVersionMatrix());
+    }
+
     /** Deploys Arthas (and optionally a JDK) into a container. */
     @PostMapping("/deploy")
     public Result<Void> deploy(@RequestBody DeployRequest request) {

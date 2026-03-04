@@ -6,7 +6,15 @@ package com.arthasmanager.service;
  */
 public interface FileTransferService {
 
-    void deployArthas(String clusterId, String namespace, String podName, String containerName);
+    /**
+     * Downloads the specified Arthas distribution (if not already cached) and uploads
+     * the essential jars to {@code /tmp/arthas/} inside the container.
+     * The full distribution is used so the container needs no internet access at attach time.
+     *
+     * @param arthasVersion Arthas version to deploy, e.g. {@code "3.7.2"}
+     */
+    void deployArthas(String clusterId, String namespace, String podName,
+                      String containerName, String arthasVersion);
 
     void uploadJdk(String clusterId, String namespace, String podName, String containerName, String jdkVersion);
 

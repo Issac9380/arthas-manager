@@ -14,5 +14,8 @@ export const arthasApi = {
   execute: (data) => http.post('/arthas/execute', data),
 
   /** Close a session */
-  closeSession: (sessionId) => http.delete(`/arthas/sessions/${sessionId}`)
+  closeSession: (sessionId) => http.delete(`/arthas/sessions/${sessionId}`),
+
+  /** JDK ↔ Arthas version compatibility matrix */
+  getVersionMatrix: () => http.get('/arthas/version-matrix')
 }

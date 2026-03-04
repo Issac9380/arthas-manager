@@ -12,8 +12,11 @@ spring:
 arthas:
   # Local directory to cache downloaded JDK / Arthas packages
   tools-dir: ${user.home}/.arthas-manager/tools
-  # Arthas boot jar download URL template (use {version})
-  boot-jar-url: https://arthas.aliyun.com/arthas-boot.jar
+  # Full arthas binary distribution URL template — {version} is replaced at runtime
+  # Default points to Maven Central (works globally); change to a mirror if needed
+  distribution-url: https://repo1.maven.org/maven2/com/taobao/arthas/arthas-packaging/{version}/arthas-packaging-{version}-bin.zip
+  # Default Arthas version used when the deploy request does not specify one
+  default-arthas-version: 3.7.2
   # Default Arthas HTTP API port inside the container
   default-api-port: 39394
   # Session idle timeout in minutes

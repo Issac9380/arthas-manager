@@ -196,6 +196,7 @@ public class ClusterServiceImpl implements ClusterService {
 
     /**
      * 根据认证方式构建 KubernetesClient.
+     * 显式禁用 HTTP/HTTPS 代理，防止系统代理设置干扰 K8s API 连接。
      */
     KubernetesClient buildClientInternal(ClusterConfig config) {
         return switch (config.getAuthType()) {
@@ -203,7 +204,9 @@ public class ClusterServiceImpl implements ClusterService {
                 ConfigBuilder b = new ConfigBuilder()
                         .withMasterUrl(config.getApiServerUrl())
                         .withOauthToken(config.getToken())
-                        .withTrustCerts(config.isSkipTlsVerify());
+                        .withTrustCerts(config.isSkipTlsVerify())
+                        .withHttpProxy(null)
+                        .withHttpsProxy(null);
                 if (hasText(config.getCaCertData())) {
                     b.withCaCertData(b64(config.getCaCertData()));
                 }
@@ -215,16 +218,26 @@ public class ClusterServiceImpl implements ClusterService {
                         .withTrustCerts(config.isSkipTlsVerify())
                         .withCaCertData(b64(config.getCaCertData()))
                         .withClientCertData(b64(config.getClientCertData()))
-                        .withClientKeyData(b64(config.getClientKeyData()));
+                        .withClientKeyData(b64(config.getClientKeyData()))
+                        .withHttpProxy(null)
+                        .withHttpsProxy(null);
                 yield new KubernetesClientBuilder().withConfig(b.build()).build();
             }
             case KUBECONFIG -> {
                 Config k8sConfig = Config.fromKubeconfig(config.getKubeconfigContent());
-                yield new KubernetesClientBuilder().withConfig(k8sConfig).build();
+                // Disable proxy picked up from system properties
+                Config noProxy = new ConfigBuilder(k8sConfig)
+                        .withHttpProxy(null)
+                        .withHttpsProxy(null)
+                        .build();
+                yield new KubernetesClientBuilder().withConfig(noProxy).build();
             }
             default -> {
                 // IN_CLUSTER: auto-detect via KUBECONFIG env / in-cluster ServiceAccount
-                Config k8sConfig = new ConfigBuilder().build();
+                Config k8sConfig = new ConfigBuilder()
+                        .withHttpProxy(null)
+                        .withHttpsProxy(null)
+                        .build();
                 yield new KubernetesClientBuilder().withConfig(k8sConfig).build();
             }
         };
@@ -236,7 +249,7 @@ public class ClusterServiceImpl implements ClusterService {
             client.getKubernetesVersion();
             return ClusterStatus.CONNECTED;
         } catch (Exception e) {
-            log.debug("Cluster probe failed: {}", e.getMessage());
+            log.warn("Cluster probe failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return ClusterStatus.DISCONNECTED;
         }
     }
