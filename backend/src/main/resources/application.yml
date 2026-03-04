@@ -8,6 +8,23 @@ spring:
     multipart:
       max-file-size: 500MB
       max-request-size: 500MB
+  datasource:
+    url: jdbc:sqlite:${user.home}/.arthas-manager/arthas-manager.db
+    driver-class-name: org.sqlite.JDBC
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-handlers-package: com.arthasmanager.config
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  secret: arthas-manager-jwt-secret-key-please-change-in-production-env
+  expiration: 86400000
 
 arthas:
   # Local directory to cache downloaded JDK / Arthas packages

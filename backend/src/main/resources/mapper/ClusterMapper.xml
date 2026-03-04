@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.arthasmanager.mapper.ClusterMapper">
+
+    <resultMap id="ClusterResultMap" type="com.arthasmanager.entity.ClusterEntity">
+        <id     column="id"                 property="id"/>
+        <result column="user_id"            property="userId"/>
+        <result column="name"               property="name"/>
+        <result column="auth_type"          property="authType"/>
+        <result column="api_server_url"     property="apiServerUrl"/>
+        <result column="skip_tls_verify"    property="skipTlsVerify"/>
+        <result column="token"              property="token"/>
+        <result column="ca_cert_data"       property="caCertData"/>
+        <result column="client_cert_data"   property="clientCertData"/>
+        <result column="client_key_data"    property="clientKeyData"/>
+        <result column="kubeconfig_content" property="kubeconfigContent"/>
+        <result column="default_cluster"    property="defaultCluster"/>
+        <result column="status"             property="status"/>
+        <result column="status_message"     property="statusMessage"/>
+        <result column="created_at"         property="createdAt"
+                typeHandler="com.arthasmanager.config.InstantTypeHandler"/>
+    </resultMap>
+
+    <sql id="allColumns">
+        id, user_id, name, auth_type, api_server_url, skip_tls_verify,
+        token, ca_cert_data, client_cert_data, client_key_data, kubeconfig_content,
+        default_cluster, status, status_message, created_at
+    </sql>
+
+    <select id="findByUserId" resultMap="ClusterResultMap">
+        SELECT <include refid="allColumns"/>
+        FROM clusters
+        WHERE user_id = #{userId}
+        ORDER BY created_at ASC
+    </select>
+
+    <select id="findById" resultMap="ClusterResultMap">
+        SELECT <include refid="allColumns"/>
+        FROM clusters
+        WHERE id = #{id}
+    </select>
+
+    <select id="findDefaultByUserId" resultMap="ClusterResultMap">
+        SELECT <include refid="allColumns"/>
+        FROM clusters
+        WHERE user_id = #{userId} AND default_cluster = 1
+        LIMIT 1
+    </select>
+
+    <insert id="insert">
+        INSERT INTO clusters (
+            id, user_id, name, auth_type, api_server_url, skip_tls_verify,
+            token, ca_cert_data, client_cert_data, client_key_data, kubeconfig_content,
+            default_cluster, status, status_message, created_at
+        ) VALUES (
+            #{id}, #{userId}, #{name}, #{authType}, #{apiServerUrl}, #{skipTlsVerify},
+            #{token}, #{caCertData}, #{clientCertData}, #{clientKeyData}, #{kubeconfigContent},
+            #{defaultCluster}, #{status}, #{statusMessage},
+            #{createdAt, typeHandler=com.arthasmanager.config.InstantTypeHandler}
+        )
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM clusters WHERE id = #{id}
+    </delete>
+
+    <update id="updateStatus">
+        UPDATE clusters
+        SET status = #{status}, status_message = #{statusMessage}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

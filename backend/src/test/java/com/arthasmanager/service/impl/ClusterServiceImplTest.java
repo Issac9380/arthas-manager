@@ -1,18 +1,25 @@
 package com.arthasmanager.service.impl;
 
+import com.arthasmanager.entity.ClusterEntity;
+import com.arthasmanager.mapper.ClusterMapper;
 import com.arthasmanager.model.cluster.ClusterAuthType;
 import com.arthasmanager.model.cluster.ClusterConfig;
 import com.arthasmanager.model.cluster.ClusterInfo;
 import com.arthasmanager.model.cluster.ClusterStatus;
+import com.arthasmanager.security.UserPrincipal;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.VersionInfo;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
@@ -22,54 +29,69 @@ import static org.mockito.BDDMockito.*;
 @ExtendWith(MockitoExtension.class)
 class ClusterServiceImplTest {
 
+    @Mock
+    private ClusterMapper clusterMapper;
+
     @InjectMocks
     private ClusterServiceImpl service;
 
+    private static final Long TEST_USER_ID = 1L;
+
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(service, "defaultKubeconfigPath", "");
+        UserPrincipal principal = new UserPrincipal(TEST_USER_ID, "testuser", "password");
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+        SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(auth);
+        SecurityContextHolder.setContext(ctx);
     }
 
-    // ── listClusters / addCluster / deleteCluster ─────────────────────────────
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
+    // ── listClusters ──────────────────────────────────────────────────────────
 
     @Test
     void listClusters_initially_returnsEmptyList() {
-        // Before initDefaultCluster, no clusters registered
+        given(clusterMapper.findByUserId(TEST_USER_ID)).willReturn(List.of());
         assertThat(service.listClusters()).isEmpty();
     }
 
     @Test
-    void deleteCluster_defaultCluster_throwsIllegalArgument() {
-        // Inject a default entry so the guard fires
-        ClusterInfo info = ClusterInfo.builder()
-                .id("default").name("default")
-                .authType(ClusterAuthType.IN_CLUSTER)
-                .status(ClusterStatus.UNKNOWN).build();
+    void listClusters_returnsMappedInfoForUser() {
+        ClusterEntity entity = ClusterEntity.builder()
+                .id("cluster-1").userId(TEST_USER_ID).name("my-cluster")
+                .authType(ClusterAuthType.TOKEN).apiServerUrl("https://1.2.3.4:6443")
+                .status(ClusterStatus.CONNECTED).statusMessage("Connected")
+                .build();
+        given(clusterMapper.findByUserId(TEST_USER_ID)).willReturn(List.of(entity));
 
-        @SuppressWarnings("unchecked")
-        java.util.concurrent.ConcurrentHashMap<String, ClusterInfo> infoReg =
-                (java.util.concurrent.ConcurrentHashMap<String, ClusterInfo>)
-                        ReflectionTestUtils.getField(service, "infoRegistry");
-        infoReg.put("default", info);
+        List<ClusterInfo> result = service.listClusters();
 
-        assertThatThrownBy(() -> service.deleteCluster("default"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Default cluster");
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo("cluster-1");
+        assertThat(result.get(0).getName()).isEqualTo("my-cluster");
     }
+
+    // ── getClient ─────────────────────────────────────────────────────────────
 
     @Test
     void getClient_unknownCluster_throwsIllegalStateException() {
+        given(clusterMapper.findById("no-such-id")).willReturn(null);
+
         assertThatThrownBy(() -> service.getClient("no-such-id"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("no-such-id");
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void getClient_nullOrBlankId_fallsBackToDefault() {
-        // null/blank → resolves to DEFAULT_CLUSTER_ID; since no default is registered, throws
+    void getClient_nullOrBlankId_noDefaultCluster_throwsIllegalStateException() {
+        given(clusterMapper.findDefaultByUserId(TEST_USER_ID)).willReturn(null);
+
         assertThatThrownBy(() -> service.getClient(null))
                 .isInstanceOf(IllegalStateException.class);
-
         assertThatThrownBy(() -> service.getClient("  "))
                 .isInstanceOf(IllegalStateException.class);
     }
@@ -78,7 +100,6 @@ class ClusterServiceImplTest {
 
     @Test
     void testConnection_withMockedConnectedClient_returnsConnectedStatus() {
-        // Use a real ClusterServiceImpl spy so we can stub buildClientInternal
         ClusterServiceImpl spy = org.mockito.Mockito.spy(service);
 
         KubernetesClient mockClient = mock(KubernetesClient.class);
@@ -86,10 +107,8 @@ class ClusterServiceImplTest {
         doReturn(mockClient).when(spy).buildClientInternal(any());
 
         ClusterConfig config = ClusterConfig.builder()
-                .name("test")
-                .authType(ClusterAuthType.TOKEN)
-                .apiServerUrl("https://1.2.3.4:6443")
-                .token("tok")
+                .name("test").authType(ClusterAuthType.TOKEN)
+                .apiServerUrl("https://1.2.3.4:6443").token("tok")
                 .build();
 
         ClusterInfo result = spy.testConnection(config);
@@ -99,18 +118,15 @@ class ClusterServiceImplTest {
     }
 
     @Test
-    void testConnection_whenClientThrows_returnsErrorStatus() {
+    void testConnection_whenClientThrows_returnsDisconnectedStatus() {
         ClusterServiceImpl spy = org.mockito.Mockito.spy(service);
 
         KubernetesClient mockClient = mock(KubernetesClient.class);
-        given(mockClient.getKubernetesVersion())
-                .willThrow(new RuntimeException("connection refused"));
+        given(mockClient.getKubernetesVersion()).willThrow(new RuntimeException("connection refused"));
         doReturn(mockClient).when(spy).buildClientInternal(any());
 
         ClusterConfig config = ClusterConfig.builder()
-                .name("test")
-                .authType(ClusterAuthType.IN_CLUSTER)
-                .build();
+                .name("test").authType(ClusterAuthType.IN_CLUSTER).build();
 
         ClusterInfo result = spy.testConnection(config);
 
@@ -123,11 +139,8 @@ class ClusterServiceImplTest {
         doThrow(new RuntimeException("bad config")).when(spy).buildClientInternal(any());
 
         ClusterConfig config = ClusterConfig.builder()
-                .name("test")
-                .authType(ClusterAuthType.TOKEN)
-                .apiServerUrl("https://bad:6443")
-                .token("tok")
-                .build();
+                .name("test").authType(ClusterAuthType.TOKEN)
+                .apiServerUrl("https://bad:6443").token("tok").build();
 
         ClusterInfo result = spy.testConnection(config);
 
@@ -138,19 +151,16 @@ class ClusterServiceImplTest {
     // ── addCluster ────────────────────────────────────────────────────────────
 
     @Test
-    void addCluster_registersClusterAndReturnsInfo() {
+    void addCluster_insertsToDbAndReturnsInfo() {
         ClusterServiceImpl spy = org.mockito.Mockito.spy(service);
 
         KubernetesClient mockClient = mock(KubernetesClient.class);
-        given(mockClient.getKubernetesVersion())
-                .willThrow(new RuntimeException("no cluster"));
+        given(mockClient.getKubernetesVersion()).willThrow(new RuntimeException("no cluster"));
         doReturn(mockClient).when(spy).buildClientInternal(any());
 
         ClusterConfig config = ClusterConfig.builder()
-                .name("new-cluster")
-                .authType(ClusterAuthType.TOKEN)
-                .apiServerUrl("https://1.2.3.4:6443")
-                .token("tok")
+                .name("new-cluster").authType(ClusterAuthType.TOKEN)
+                .apiServerUrl("https://1.2.3.4:6443").token("tok")
                 .build();
 
         ClusterInfo info = spy.addCluster(config);
@@ -158,35 +168,49 @@ class ClusterServiceImplTest {
         assertThat(info.getId()).isNotBlank();
         assertThat(info.getName()).isEqualTo("new-cluster");
         assertThat(info.getAuthType()).isEqualTo(ClusterAuthType.TOKEN);
-        assertThat(spy.listClusters()).hasSize(1);
-        assertThat(spy.getClusterInfo(info.getId())).isNotNull();
+
+        ArgumentCaptor<ClusterEntity> captor = ArgumentCaptor.forClass(ClusterEntity.class);
+        verify(clusterMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(TEST_USER_ID);
     }
 
     @Test
-    void addCluster_thenDelete_removesCluster() {
+    void addCluster_thenDelete_callsMapperDeleteById() {
         ClusterServiceImpl spy = org.mockito.Mockito.spy(service);
 
         KubernetesClient mockClient = mock(KubernetesClient.class);
-        given(mockClient.getKubernetesVersion())
-                .willThrow(new RuntimeException("no cluster"));
+        given(mockClient.getKubernetesVersion()).willThrow(new RuntimeException("no cluster"));
         doReturn(mockClient).when(spy).buildClientInternal(any());
 
         ClusterConfig config = ClusterConfig.builder()
-                .name("temp-cluster")
-                .authType(ClusterAuthType.IN_CLUSTER)
-                .build();
+                .name("temp").authType(ClusterAuthType.IN_CLUSTER).build();
 
         ClusterInfo info = spy.addCluster(config);
-        assertThat(spy.listClusters()).hasSize(1);
-
         spy.deleteCluster(info.getId());
-        assertThat(spy.listClusters()).isEmpty();
+
+        verify(clusterMapper).deleteById(info.getId());
     }
 
     // ── getClusterInfo ────────────────────────────────────────────────────────
 
     @Test
     void getClusterInfo_unknownId_returnsNull() {
+        given(clusterMapper.findById("not-registered")).willReturn(null);
         assertThat(service.getClusterInfo("not-registered")).isNull();
+    }
+
+    @Test
+    void getClusterInfo_existingId_returnsInfo() {
+        ClusterEntity entity = ClusterEntity.builder()
+                .id("c-1").userId(TEST_USER_ID).name("prod")
+                .authType(ClusterAuthType.KUBECONFIG)
+                .status(ClusterStatus.CONNECTED).statusMessage("Connected")
+                .build();
+        given(clusterMapper.findById("c-1")).willReturn(entity);
+
+        ClusterInfo info = service.getClusterInfo("c-1");
+
+        assertThat(info).isNotNull();
+        assertThat(info.getName()).isEqualTo("prod");
     }
 }

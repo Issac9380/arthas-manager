@@ -1,154 +1,108 @@
 package com.arthasmanager.service.impl;
 
+import com.arthasmanager.entity.ClusterEntity;
+import com.arthasmanager.mapper.ClusterMapper;
 import com.arthasmanager.model.cluster.ClusterAuthType;
 import com.arthasmanager.model.cluster.ClusterConfig;
 import com.arthasmanager.model.cluster.ClusterInfo;
 import com.arthasmanager.model.cluster.ClusterStatus;
+import com.arthasmanager.security.UserPrincipal;
 import com.arthasmanager.service.ClusterService;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
-import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
- * 集群注册表与 KubernetesClient 工厂实现.
+ * Cluster registry backed by SQLite via MyBatis.
  *
- * <p>启动时自动尝试从 {@code application.yml} 中读取 kubeconfig，
- * 注册名为 "default" 的默认集群。
+ * <p>Each user owns their own cluster records. The current user ID is resolved
+ * from the Spring Security context on every operation.
+ *
+ * <p>Live {@link KubernetesClient} instances are cached in-memory (keyed by
+ * cluster ID) to avoid rebuilding the connection on every call. They are
+ * rebuilt on-demand from the DB when not cached.
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ClusterServiceImpl implements ClusterService {
 
-    private static final String DEFAULT_CLUSTER_ID = "default";
+    private final ClusterMapper clusterMapper;
 
-    @Value("${kubernetes.kubeconfig:}")
-    private String defaultKubeconfigPath;
-
-    /** 集群配置注册表（含敏感信息，仅内存持有） */
-    private final ConcurrentHashMap<String, ClusterConfig> configRegistry = new ConcurrentHashMap<>();
-    /** 集群信息注册表（脱敏，用于对外展示） */
-    private final ConcurrentHashMap<String, ClusterInfo> infoRegistry = new ConcurrentHashMap<>();
-    /** KubernetesClient 注册表 */
+    /** Live KubernetesClient connections — keyed by clusterId. */
     private final ConcurrentHashMap<String, KubernetesClient> clientRegistry = new ConcurrentHashMap<>();
 
-    // ── 启动时初始化默认集群 ───────────────────────────────────────────────────
-
-    @PostConstruct
-    public void initDefaultCluster() {
-        String kubeconfigFile = (defaultKubeconfigPath == null || defaultKubeconfigPath.isBlank())
-                ? System.getProperty("user.home") + "/.kube/config"
-                : defaultKubeconfigPath;
-
-        ClusterConfig config = null;
-        if (new File(kubeconfigFile).exists()) {
-            try {
-                String content = Files.readString(Path.of(kubeconfigFile));
-                config = ClusterConfig.builder()
-                        .name("default")
-                        .authType(ClusterAuthType.KUBECONFIG)
-                        .kubeconfigContent(content)
-                        .build();
-                log.info("Loaded kubeconfig from: {}", kubeconfigFile);
-            } catch (Exception e) {
-                log.warn("Could not read kubeconfig at {}: {}", kubeconfigFile, e.getMessage());
-            }
-        }
-
-        if (config == null) {
-            config = ClusterConfig.builder()
-                    .name("in-cluster")
-                    .authType(ClusterAuthType.IN_CLUSTER)
-                    .build();
-            log.info("No kubeconfig found, trying in-cluster ServiceAccount.");
-        }
-
-        try {
-            KubernetesClient client = buildClientInternal(config);
-            ClusterStatus status = probeStatus(client);
-            String apiUrl = client.getMasterUrl() != null ? client.getMasterUrl().toString() : "unknown";
-
-            configRegistry.put(DEFAULT_CLUSTER_ID, config);
-            clientRegistry.put(DEFAULT_CLUSTER_ID, client);
-            infoRegistry.put(DEFAULT_CLUSTER_ID, ClusterInfo.builder()
-                    .id(DEFAULT_CLUSTER_ID)
-                    .name(config.getName())
-                    .authType(config.getAuthType())
-                    .apiServerUrl(apiUrl)
-                    .defaultCluster(true)
-                    .status(status)
-                    .statusMessage(status == ClusterStatus.CONNECTED ? "Connected" : "Cluster unreachable")
-                    .createdAt(Instant.now())
-                    .build());
-            log.info("Default cluster registered: {} → {} ({})", config.getName(), apiUrl, status);
-        } catch (Exception e) {
-            log.warn("Default cluster initialization failed: {}. K8s features will be unavailable until a cluster is added.", e.getMessage());
-        }
-    }
-
-    // ── ClusterService 接口实现 ───────────────────────────────────────────────
+    // ── ClusterService interface ───────────────────────────────────────────────
 
     @Override
     public ClusterInfo addCluster(ClusterConfig config) {
+        Long userId = getCurrentUserId();
         String id = UUID.randomUUID().toString();
+
         KubernetesClient client = buildClientInternal(config);
         ClusterStatus status = probeStatus(client);
         String apiUrl = resolveApiServerUrl(config, client);
 
-        configRegistry.put(id, config);
-        clientRegistry.put(id, client);
-
-        ClusterInfo info = ClusterInfo.builder()
+        ClusterEntity entity = ClusterEntity.builder()
                 .id(id)
+                .userId(userId)
                 .name(config.getName())
                 .authType(config.getAuthType())
                 .apiServerUrl(apiUrl)
+                .skipTlsVerify(config.isSkipTlsVerify())
+                .token(config.getToken())
+                .caCertData(config.getCaCertData())
+                .clientCertData(config.getClientCertData())
+                .clientKeyData(config.getClientKeyData())
+                .kubeconfigContent(config.getKubeconfigContent())
                 .defaultCluster(false)
                 .status(status)
                 .statusMessage(status == ClusterStatus.CONNECTED ? "Connected" : "Cluster unreachable")
                 .createdAt(Instant.now())
                 .build();
-        infoRegistry.put(id, info);
+
+        clusterMapper.insert(entity);
+        clientRegistry.put(id, client);
+
         log.info("Cluster added: {} ({}) → {} [{}]", config.getName(), config.getAuthType(), apiUrl, status);
-        return info;
+        return toInfo(entity);
     }
 
     @Override
     public List<ClusterInfo> listClusters() {
-        return new ArrayList<>(infoRegistry.values());
+        Long userId = getCurrentUserId();
+        return clusterMapper.findByUserId(userId).stream()
+                .map(this::toInfo)
+                .collect(Collectors.toList());
     }
 
     @Override
     public ClusterInfo getClusterInfo(String clusterId) {
-        return infoRegistry.get(effectiveId(clusterId));
+        ClusterEntity entity = clusterMapper.findById(clusterId);
+        return entity != null ? toInfo(entity) : null;
     }
 
     @Override
     public void deleteCluster(String clusterId) {
-        if (DEFAULT_CLUSTER_ID.equals(clusterId)) {
-            throw new IllegalArgumentException("Default cluster cannot be deleted.");
-        }
         KubernetesClient client = clientRegistry.remove(clusterId);
         if (client != null) {
             try { client.close(); } catch (Exception ignored) {}
         }
-        configRegistry.remove(clusterId);
-        infoRegistry.remove(clusterId);
+        clusterMapper.deleteById(clusterId);
         log.info("Cluster deleted: {}", clusterId);
     }
 
@@ -164,7 +118,9 @@ public class ClusterServiceImpl implements ClusterService {
                     .authType(config.getAuthType())
                     .apiServerUrl(apiUrl)
                     .status(status)
-                    .statusMessage(status == ClusterStatus.CONNECTED ? "Connection successful" : "Cluster unreachable (check credentials/network)")
+                    .statusMessage(status == ClusterStatus.CONNECTED
+                            ? "Connection successful"
+                            : "Cluster unreachable (check credentials/network)")
                     .build();
         } catch (Exception e) {
             return ClusterInfo.builder()
@@ -180,23 +136,63 @@ public class ClusterServiceImpl implements ClusterService {
 
     @Override
     public KubernetesClient getClient(String clusterId) {
-        KubernetesClient client = clientRegistry.get(effectiveId(clusterId));
-        if (client == null) {
+        ClusterEntity entity;
+        if (clusterId == null || clusterId.isBlank()) {
+            Long userId = getCurrentUserId();
+            entity = clusterMapper.findDefaultByUserId(userId);
+        } else {
+            entity = clusterMapper.findById(clusterId);
+        }
+
+        if (entity == null) {
             throw new IllegalStateException(
                     "Cluster not found: '" + clusterId + "'. Please add a cluster in the Cluster Management page.");
         }
-        return client;
+
+        return clientRegistry.computeIfAbsent(entity.getId(), id -> buildClientFromEntity(entity));
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private String effectiveId(String clusterId) {
-        return (clusterId == null || clusterId.isBlank()) ? DEFAULT_CLUSTER_ID : clusterId;
+    protected Long getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
+            return principal.getId();
+        }
+        throw new IllegalStateException("No authenticated user found in security context.");
+    }
+
+    private ClusterInfo toInfo(ClusterEntity entity) {
+        return ClusterInfo.builder()
+                .id(entity.getId())
+                .name(entity.getName())
+                .authType(entity.getAuthType())
+                .apiServerUrl(entity.getApiServerUrl())
+                .defaultCluster(entity.isDefaultCluster())
+                .status(entity.getStatus())
+                .statusMessage(entity.getStatusMessage())
+                .createdAt(entity.getCreatedAt())
+                .build();
+    }
+
+    private KubernetesClient buildClientFromEntity(ClusterEntity entity) {
+        ClusterConfig config = ClusterConfig.builder()
+                .name(entity.getName())
+                .authType(entity.getAuthType())
+                .apiServerUrl(entity.getApiServerUrl())
+                .skipTlsVerify(entity.isSkipTlsVerify())
+                .token(entity.getToken())
+                .caCertData(entity.getCaCertData())
+                .clientCertData(entity.getClientCertData())
+                .clientKeyData(entity.getClientKeyData())
+                .kubeconfigContent(entity.getKubeconfigContent())
+                .build();
+        return buildClientInternal(config);
     }
 
     /**
-     * 根据认证方式构建 KubernetesClient.
-     * 显式禁用 HTTP/HTTPS 代理，防止系统代理设置干扰 K8s API 连接。
+     * Build a KubernetesClient from the given config.
+     * Proxy is explicitly disabled to prevent system proxy settings from interfering.
      */
     KubernetesClient buildClientInternal(ClusterConfig config) {
         return switch (config.getAuthType()) {
@@ -225,7 +221,6 @@ public class ClusterServiceImpl implements ClusterService {
             }
             case KUBECONFIG -> {
                 Config k8sConfig = Config.fromKubeconfig(config.getKubeconfigContent());
-                // Disable proxy picked up from system properties
                 Config noProxy = new ConfigBuilder(k8sConfig)
                         .withHttpProxy(null)
                         .withHttpsProxy(null)
@@ -233,7 +228,6 @@ public class ClusterServiceImpl implements ClusterService {
                 yield new KubernetesClientBuilder().withConfig(noProxy).build();
             }
             default -> {
-                // IN_CLUSTER: auto-detect via KUBECONFIG env / in-cluster ServiceAccount
                 Config k8sConfig = new ConfigBuilder()
                         .withHttpProxy(null)
                         .withHttpsProxy(null)
@@ -243,7 +237,6 @@ public class ClusterServiceImpl implements ClusterService {
         };
     }
 
-    /** 探测连通性：调用 /version 接口（无需任何 RBAC 权限）. */
     private ClusterStatus probeStatus(KubernetesClient client) {
         try {
             client.getKubernetesVersion();
@@ -260,7 +253,6 @@ public class ClusterServiceImpl implements ClusterService {
         return "unknown";
     }
 
-    /** Base64-encode PEM text so Fabric8 ConfigBuilder accepts it. */
     private String b64(String pem) {
         if (pem == null) return null;
         return Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8));

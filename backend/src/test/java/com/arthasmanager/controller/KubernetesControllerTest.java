@@ -1,13 +1,16 @@
 package com.arthasmanager.controller;
 
+import com.arthasmanager.model.dto.JavaProcessInfo;
 import com.arthasmanager.model.dto.NamespaceInfo;
 import com.arthasmanager.model.dto.PodInfo;
-import com.arthasmanager.model.dto.JavaProcessInfo;
+import com.arthasmanager.security.JwtUtil;
 import com.arthasmanager.service.KubernetesService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -18,6 +21,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(KubernetesController.class)
+@WithMockUser
 class KubernetesControllerTest {
 
     @Autowired
@@ -25,6 +29,12 @@ class KubernetesControllerTest {
 
     @MockBean
     private KubernetesService kubernetesService;
+
+    @MockBean
+    private JwtUtil jwtUtil;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
 
     // ── /api/k8s/namespaces ───────────────────────────────────────────────────
 
