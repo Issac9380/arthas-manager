@@ -1,6 +1,10 @@
 <template>
   <el-config-provider>
-    <el-container class="app-layout">
+    <!-- Login page: no sidebar layout -->
+    <router-view v-if="isLoginPage" />
+
+    <!-- Main app layout -->
+    <el-container v-else class="app-layout">
       <!-- Sidebar navigation -->
       <el-aside width="220px" class="sidebar">
         <div class="logo">
@@ -42,7 +46,18 @@
             <el-breadcrumb-item>{{ currentPageTitle }}</el-breadcrumb-item>
           </el-breadcrumb>
           <div class="header-right">
-            <el-tag type="success" size="small">在线</el-tag>
+            <el-dropdown @command="handleUserCommand">
+              <span class="user-info">
+                <el-avatar :size="28" icon="UserFilled" />
+                <span class="username">{{ authStore.username }}</span>
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </el-header>
 
@@ -57,11 +72,23 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const isLoginPage = computed(() => route.path === '/login')
 const activeRoute = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title ?? '')
+
+function handleUserCommand(command) {
+  if (command === 'logout') {
+    authStore.logout()
+    router.push('/login')
+  }
+}
 </script>
 
 <style>
@@ -109,6 +136,17 @@ body {
 }
 
 .header-right { display: flex; align-items: center; gap: 12px; }
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #606266;
+  font-size: 14px;
+}
+
+.username { font-weight: 500; }
 
 .main-content {
   padding: 24px;

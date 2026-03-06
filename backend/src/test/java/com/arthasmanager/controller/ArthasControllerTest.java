@@ -3,6 +3,7 @@ package com.arthasmanager.controller;
 import com.arthasmanager.model.dto.ArthasCommandRequest;
 import com.arthasmanager.model.dto.AttachRequest;
 import com.arthasmanager.model.dto.DeployRequest;
+import com.arthasmanager.security.JwtUtil;
 import com.arthasmanager.service.ArthasService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -19,10 +22,12 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(ArthasController.class)
+@WithMockUser
 class ArthasControllerTest {
 
     @Autowired
@@ -30,6 +35,12 @@ class ArthasControllerTest {
 
     @MockBean
     private ArthasService arthasService;
+
+    @MockBean
+    private JwtUtil jwtUtil;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -58,7 +69,7 @@ class ArthasControllerTest {
         request.setPodName("my-pod");
         request.setContainerName("app");
 
-        mockMvc.perform(post("/api/arthas/deploy")
+        mockMvc.perform(post("/api/arthas/deploy").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -79,7 +90,7 @@ class ArthasControllerTest {
 
         given(arthasService.attach(any(AttachRequest.class))).willReturn("session-uuid-123");
 
-        mockMvc.perform(post("/api/arthas/attach")
+        mockMvc.perform(post("/api/arthas/attach").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -96,7 +107,7 @@ class ArthasControllerTest {
         JsonNode fakeResult = objectMapper.readTree("{\"status\":\"OK\",\"body\":{\"cpu\":12.5}}");
         given(arthasService.execute(any(ArthasCommandRequest.class))).willReturn(fakeResult);
 
-        mockMvc.perform(post("/api/arthas/execute")
+        mockMvc.perform(post("/api/arthas/execute").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -107,7 +118,7 @@ class ArthasControllerTest {
 
     @Test
     void close_existingSession_returns200WithNullData() throws Exception {
-        mockMvc.perform(delete("/api/arthas/sessions/session-uuid-123"))
+        mockMvc.perform(delete("/api/arthas/sessions/session-uuid-123").with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").doesNotExist());

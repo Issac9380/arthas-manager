@@ -4,6 +4,7 @@ import com.arthasmanager.model.cluster.ClusterAuthType;
 import com.arthasmanager.model.cluster.ClusterConfig;
 import com.arthasmanager.model.cluster.ClusterInfo;
 import com.arthasmanager.model.cluster.ClusterStatus;
+import com.arthasmanager.security.JwtUtil;
 import com.arthasmanager.service.ClusterService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -19,10 +22,12 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(ClusterController.class)
+@WithMockUser
 class ClusterControllerTest {
 
     @Autowired
@@ -30,6 +35,12 @@ class ClusterControllerTest {
 
     @MockBean
     private ClusterService clusterService;
+
+    @MockBean
+    private JwtUtil jwtUtil;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -80,7 +91,7 @@ class ClusterControllerTest {
 
         given(clusterService.addCluster(any(ClusterConfig.class))).willReturn(sampleCluster());
 
-        mockMvc.perform(post("/api/clusters")
+        mockMvc.perform(post("/api/clusters").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(config)))
                 .andExpect(status().isOk())
@@ -97,7 +108,7 @@ class ClusterControllerTest {
 
         given(clusterService.addCluster(any())).willReturn(sampleCluster());
 
-        mockMvc.perform(post("/api/clusters")
+        mockMvc.perform(post("/api/clusters").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(config)));
 
@@ -121,7 +132,7 @@ class ClusterControllerTest {
 
         given(clusterService.testConnection(any())).willReturn(probeResult);
 
-        mockMvc.perform(post("/api/clusters/test")
+        mockMvc.perform(post("/api/clusters/test").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(config)))
                 .andExpect(status().isOk())
@@ -131,7 +142,7 @@ class ClusterControllerTest {
 
     @Test
     void deleteCluster_existingId_returns200() throws Exception {
-        mockMvc.perform(delete("/api/clusters/cluster-1"))
+        mockMvc.perform(delete("/api/clusters/cluster-1").with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
@@ -140,7 +151,7 @@ class ClusterControllerTest {
 
     @Test
     void deleteCluster_returnsNullData() throws Exception {
-        mockMvc.perform(delete("/api/clusters/cluster-1"))
+        mockMvc.perform(delete("/api/clusters/cluster-1").with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
