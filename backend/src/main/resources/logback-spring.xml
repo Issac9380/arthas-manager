@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  arthas-manager 日志配置
+  ─────────────────────────────────────────────────────────────────────────────
+  默认模式 (default profile):
+    · 控制台：彩色，带线程名 / 类名 / 行号
+    · 文件：按天滚动，保留 30 天，单文件上限 100MB
+
+  详细模式 (verbose profile，启动时加 --spring.profiles.active=verbose):
+    · 额外开启 Spring MVC / Security / MyBatis / Fabric8 的 DEBUG 日志
+    · HTTP 请求体 / 响应体完整打印
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<configuration scan="true" scanPeriod="60 seconds">
+
+  <!-- ── 从 application.yml 读取日志目录，默认 logs/ ─────────────────────── -->
+  <springProperty name="LOG_DIR"  source="logging.file.path"  defaultValue="logs"/>
+  <springProperty name="APP_NAME" source="spring.application.name" defaultValue="arthas-manager"/>
+
+  <!-- ── 颜色转换器（仅在支持 ANSI 的终端生效）─────────────────────────────── -->
+  <conversionRule conversionWord="clr"
+                  converterClass="org.springframework.boot.logging.logback.ColorConverter"/>
+  <conversionRule conversionWord="wex"
+                  converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       PATTERN 定义
+       格式：时间 | 级别 | PID | 线程 | 类名:行号 | 消息
+       ══════════════════════════════════════════════════════════════════════ -->
+  <property name="CONSOLE_PATTERN"
+            value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p){highlight} %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-50.50logger{49}){cyan}%clr(:){faint}%clr(%L){faint} %clr(|){faint} %m%n%wex"/>
+
+  <property name="FILE_PATTERN"
+            value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%15.15t] %-50.50logger{49}:%L | %m%n%ex"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       APPENDER — 控制台（彩色，UTF-8）
+       ══════════════════════════════════════════════════════════════════════ -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <charset>UTF-8</charset>
+      <pattern>${CONSOLE_PATTERN}</pattern>
+    </encoder>
+  </appender>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       APPENDER — 滚动文件（UTF-8，按天，保留 30 天）
+       ══════════════════════════════════════════════════════════════════════ -->
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_DIR}/${APP_NAME}.log</file>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <charset>UTF-8</charset>
+      <pattern>${FILE_PATTERN}</pattern>
+    </encoder>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <!-- 每天滚动，保留 30 天，总量不超过 3GB -->
+      <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <timeBasedFileNamingAndTriggeringPolicy
+          class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+        <maxFileSize>100MB</maxFileSize>
+      </timeBasedFileNamingAndTriggeringPolicy>
+      <maxHistory>30</maxHistory>
+      <totalSizeCap>3GB</totalSizeCap>
+    </rollingPolicy>
+  </appender>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       默认日志级别（所有 profile 均生效）
+       ══════════════════════════════════════════════════════════════════════ -->
+  <!-- 业务代码：DEBUG（详细追踪核心流程） -->
+  <logger name="com.arthasmanager"            level="DEBUG"/>
+
+  <!-- MyBatis SQL 语句（INFO，需要 verbose 才显示参数） -->
+  <logger name="com.arthasmanager.mapper"     level="DEBUG"/>
+
+  <!-- 第三方框架：生产环境减少噪音 -->
+  <logger name="io.fabric8"                   level="WARN"/>
+  <logger name="org.springframework"          level="INFO"/>
+  <logger name="org.springframework.security" level="INFO"/>
+  <logger name="org.mybatis"                  level="INFO"/>
+  <logger name="org.apache.hc"               level="WARN"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       verbose profile — 极详细模式
+       启动方式：--spring.profiles.active=verbose
+       ══════════════════════════════════════════════════════════════════════ -->
+  <springProfile name="verbose">
+    <!-- Spring MVC 请求分发 -->
+    <logger name="org.springframework.web"                         level="DEBUG"/>
+    <!-- Spring Security 认证 / 鉴权链 -->
+    <logger name="org.springframework.security"                    level="DEBUG"/>
+    <!-- MyBatis SQL + 参数 + 结果 -->
+    <logger name="org.mybatis"                                     level="DEBUG"/>
+    <logger name="com.arthasmanager.mapper"                        level="TRACE"/>
+    <!-- Fabric8 K8s 客户端（含 WebSocket / exec 流量） -->
+    <logger name="io.fabric8"                                      level="DEBUG"/>
+    <!-- Apache HttpClient（Arthas HTTP API 原始报文） -->
+    <logger name="org.apache.hc"                                  level="DEBUG"/>
+    <!-- HTTP 请求日志过滤器（CommonsRequestLoggingFilter） -->
+    <logger name="org.springframework.web.filter.CommonsRequestLoggingFilter" level="DEBUG"/>
+  </springProfile>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       ROOT logger
+       ══════════════════════════════════════════════════════════════════════ -->
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="FILE"/>
+  </root>
+
+</configuration>

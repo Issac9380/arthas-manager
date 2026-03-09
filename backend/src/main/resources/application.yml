@@ -44,6 +44,18 @@ kubernetes:
   kubeconfig: ${user.home}/.kube/config
 
 logging:
+  # 日志文件输出目录（logback-spring.xml 读取此配置）
+  file:
+    path: logs
+  # 控制台编码（防止 Windows 中文乱码）
+  charset:
+    console: UTF-8
+    file: UTF-8
   level:
     com.arthasmanager: DEBUG
     io.fabric8: WARN
+  # ──────────────────────────────────────────────────────────────────────────
+  # 详细日志模式：启动时追加 --spring.profiles.active=verbose
+  # 效果：打印 Spring MVC / Security / MyBatis SQL / Fabric8 / HTTP 请求体
+  # 示例：java -jar arthas-manager.jar --spring.profiles.active=verbose
+  # ──────────────────────────────────────────────────────────────────────────
